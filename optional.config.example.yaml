@@ -1,0 +1,46 @@
+# config.example.yaml
+
+twitch:
+  OAUTH_TOKEN: "oauth:your_twitch_oauth_token"
+  CHANNEL: "your_twitch_channel"
+  BOT_NAME: "your_bot_name"
+  BROADCASTER_ID: "your_broadcaster_id"
+  PREFIX: "!"
+  RATE_LIMIT: 20
+  MESSAGE_LIMIT: 500
+
+database:
+  URI: "mongodb://localhost:27017/"
+  DB_NAME: "spbot"
+  COLLECTION_PREFIX: "bot_"
+  MAX_POOL_SIZE: 10
+  TIMEOUT_MS: 5000
+
+openai:
+  API_KEY: "your_openai_api_key"
+  MODEL: "gpt-4"
+  MAX_TOKENS: 150
+  TEMPERATURE: 0.7
+
+voice:
+  ENABLED: True
+  PREFIX: "Hey Overlord"
+  COMMAND_TIMEOUT: 5.0
+  PHRASE_LIMIT: 10.0
+  LANGUAGE: "en-US"
+  CONFIDENCE_THRESHOLD: 0.7
+
+streamerbot:
+  WS_URI: "ws://localhost:7580"
+  RECONNECT_ATTEMPTS: 5
+  HEARTBEAT_INTERVAL: 20
+
+littlenavmap:
+  BASE_URL: "http://localhost:8965"
+  UPDATE_INTERVAL: 1.0
+  CACHE_TTL: 30
+
+bot_trigger_words: ["bot", "assistant", "overlord"]
+bot_personality: "You are an AI Overlord managing a flight simulation Twitch channel."
+verbose: False
+sentry_dsn: "your_sentry_dsn"
