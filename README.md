@@ -14,7 +14,7 @@ This project provides an AI-powered chatbot for Twitch streamers focused on flig
 
 ## Installation
 
-1. **Clone the Repository:**
+**Clone the Repository:**
 
 git clone https://github.com/your_username/ai-flight-control.git
 
