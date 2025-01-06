@@ -73,6 +73,47 @@ class LittleNavmapIntegration:
     async def get_airport_info(self, ident: str):
         """Get information about a specific airport."""
         return await self._get_data(f'/airport/info', params={"ident": ident.lower()})
+    
+    async def _get_data(self, endpoint: str, params: Optional[Dict] = None):
+        """Helper function to make a request to a specific API endpoint."""
+        self.logger.debug(f"Attempting to retrieve data from endpoint: {endpoint}")
+        url = f"{self.api_base_url}{endpoint[1:]}" # Removed leading slash from endpoint
+        self.logger.debug(f"Full URL: {url}")
+        
+        headers = {
+            'User-Agent': 'TwitchBot/1.0',
+            'Accept': 'application/json'
+        }
+        
+        try:
+            async with self.session.get(url, headers=headers, params=params) as response:
+                self.logger.debug(f"Response status: {response.status}")
+                self.logger.debug(f"Response headers: {response.headers}")
+                self.logger.debug(f"Request URL: {response.request_info.url}") # Log the full URL
+                if params:
+                    self.logger.debug(f"Request Parameters: {params}") # Log the parameters
+                content = await response.text()
+                self.logger.debug(f"Response content: {content}")
+                
+                if response.status == 200:
+                    data = await response.json()
+                    self.logger.info(f"Successfully retrieved data from {endpoint}")
+                    return data
+                elif response.status == 404:
+                    self.logger.error(f"Failed to retrieve data from {endpoint}. Status code: {response.status}. Content: {content}. Check Little Navmap web server and API path.")
+                    return None
+                elif response.status >= 500:
+                     self.logger.error(f"Server error when accessing {url}. Status code: {response.status}. Content: {content}")
+                     raise aiohttp.ClientError(f"Server error when accessing {url}. Status code: {response.status}")
+                else:
+                    self.logger.error(f"Failed to retrieve data from {endpoint}. Status code: {response.status}. Content: {content}")
+                    return None
+        except aiohttp.ClientError as e:
+            self.logger.error(f"Connection error while accessing {url}: {str(e)}")
+            raise
+        except Exception as e:
+            self.logger.error(f"An unexpected error occurred: {str(e)}", exc_info=True)
+            return None
 
     async def get_current_flight_data(self):
         """Get current flight data."""

@@ -1,13 +1,14 @@
-# File: config.py
+# config.py
 import os
 from dotenv import load_dotenv
 from dataclasses import dataclass, field
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Union
 import logging
 import json
 import yaml
 from pathlib import Path
 from pydantic import BaseModel, validator, ValidationError
+import asyncio
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +37,7 @@ class TwitchConfig(BaseModel):
      PREFIX: str = "!"
      RATE_LIMIT: int = 20
      MESSAGE_LIMIT: int = 500
-     IGNORE_LIST: List[str] = field(default_factory=list)  # Add this line
-
+     IGNORE_LIST: List[str] = field(default_factory=list)
 
      @validator('OAUTH_TOKEN')
      def validate_oauth(cls, v):
@@ -47,7 +47,7 @@ class TwitchConfig(BaseModel):
 
 class OpenAIConfig(BaseModel):
     API_KEY: str
-    MODEL: str = "gpt-40-mini"
+    MODEL: str = "gpt-4o-mini" # Changed to gpt-4o-mini
     MAX_TOKENS: int = 150
     TEMPERATURE: float = 0.7
 
@@ -112,7 +112,7 @@ class LittleNavMapConfig(BaseModel):
         return v
 
 class AviationWeatherConfig(BaseModel):
-    BASE_URL: str = "https://api.open-meteo.com/v1" # Updated base URL
+    BASE_URL: str = "https://api.checkwx.com/metar"
     TIMEOUT_MS: int = 5000
 
 
@@ -133,13 +133,18 @@ class Config:
     custom_commands_enabled: bool = True
     log_level: str = "INFO"
     sentry_dsn: Optional[str] = None
-    metar_taf_api_key: Optional[str] = None # Removed METAR_TAF_API_KEY
-    openweathermap_api_key: Optional[str] = None  # Added OpenWeatherMap API Key
-    checkwx_api_key: Optional[str] = None # Added CHECKWX_API_KEY
+    checkwx_api_key: Optional[str] = None
+    openweathermap_api_key: Optional[str] = None
+    command_permissions: Dict[str, Dict[str, Union[bool, List[str]]]] = field(default_factory=dict)
+    _file_path: Optional[str] = None
+    logger: logging.Logger = field(default_factory=lambda: logging.getLogger(__name__))
 
     def __post_init__(self):
         self.validate()
         self.setup_derived_values()
+        self.load_command_permissions()
+        if self._file_path:
+            self.logger.info(f"Configuration loaded from file: {self._file_path}")
 
     def validate(self):
         """Validate configuration values."""
@@ -173,7 +178,7 @@ class Config:
 
             openai_config = OpenAIConfig(
                 API_KEY=os.getenv('CHATGPT_API_KEY'),
-                MODEL=os.getenv('OPENAI_MODEL', 'gpt-4')
+                MODEL=os.getenv('OPENAI_MODEL', 'gpt-4o-mini') # Changed to gpt-4o-mini
             )
 
             voice_config = VoiceConfig(
@@ -192,13 +197,14 @@ class Config:
                 BASE_URL=os.getenv('LITTLENAVMAP_URL', 'http://localhost:8965')
             )
             aviationweather_config = AviationWeatherConfig(
-                #API_KEY=os.getenv('AVIATIONWEATHER_API_KEY', "e0b65803-b5d4-4e17-a370-a5c0a6607491"), #Removed API Key
+                
             )
-
-            # Ensure API keys are loaded, and default to None if not available
+            
             openweathermap_api_key = os.getenv('OPENWEATHERMAP_API_KEY')
             checkwx_api_key = os.getenv('CHECKWX_API_KEY')
             
+            config_file = os.getenv('CONFIG_FILE')
+
             return cls(
                 twitch=twitch_config,
                 database=database_config,
@@ -211,9 +217,11 @@ class Config:
                 bot_personality=os.getenv('BOT_PERSONALITY', 'You are an AI Overlord managing a flight simulation Twitch channel.'),
                 verbose=os.getenv('VERBOSE', 'False').lower() == 'true',
                 sentry_dsn=os.getenv('SENTRY_DSN'),
-                metar_taf_api_key=os.getenv('METAR_TAF_API_KEY'), # Removed METAR_TAF_API_KEY
-                openweathermap_api_key=openweathermap_api_key,
-                checkwx_api_key=checkwx_api_key # Added CHECKWX_API_KEY
+                checkwx_api_key=checkwx_api_key,
+                openweathermap_api_key = openweathermap_api_key,
+                _file_path = config_file,
+                command_permissions = {},
+                logger = logging.getLogger(__name__)
             )
 
         except ValidationError as e:
@@ -244,10 +252,9 @@ class Config:
             littlenavmap_config = LittleNavMapConfig(**config_data.get('littlenavmap', {}))
             aviationweather_config = AviationWeatherConfig(**config_data.get('aviationweather', {}))
             
-            # Ensure API keys are loaded, and default to None if not available
             openweathermap_api_key = config_data.get('openweathermap_api_key')
             checkwx_api_key = config_data.get('checkwx_api_key')
-            
+
             return cls(
                 twitch=twitch_config,
                 database=database_config,
@@ -259,10 +266,12 @@ class Config:
                 bot_trigger_words=config_data.get('bot_trigger_words', ["bot", "assistant"]),
                 bot_personality=config_data.get('bot_personality', 'You are an AI Overlord managing a flight simulation Twitch channel.'),
                 verbose=config_data.get('verbose', False),
-                sentry_dsn=config_data.get('sentry_dsn'),
-                metar_taf_api_key=config_data.get('metar_taf_api_key'), # Removed METAR_TAF_API_KEY
-                openweathermap_api_key=openweathermap_api_key,
-                checkwx_api_key=checkwx_api_key # Added CHECKWX_API_KEY
+                sentry_dsn=os.getenv('SENTRY_DSN'),
+                checkwx_api_key = checkwx_api_key,
+                openweathermap_api_key = openweathermap_api_key,
+                command_permissions = config_data.get('command_permissions', {}),
+                _file_path = file_path,
+                logger = logging.getLogger(__name__)
             )
         except FileNotFoundError as e:
             logger.error(f"Config file not found at {file_path}: {e}")
@@ -282,6 +291,22 @@ class Config:
         except Exception as e:
             logger.error(f"Failed to load configuration from file: {e}")
             raise ConfigError(f"Configuration file loading failed: {e}") from e
+
+    def reload(self):
+        """Reload configuration from file."""
+        if self._file_path:
+            new_config = Config.load_from_file(self._file_path)
+            self.__dict__.update(new_config.__dict__)
+            self.logger.info(f"Configuration reloaded from: {self._file_path}")
+        else:
+            self.logger.warning("No config file path available to reload from.")
+
+    def load_command_permissions(self):
+        """Load command permissions from the configuration."""
+        if self.command_permissions:
+            self.logger.info("Loading command permissions from configuration...")
+            for command_name, permissions in self.command_permissions.items():
+                 self.command_cooldowns[command_name] = permissions.get("cooldown", 0)
 
 def load_config() -> Config:
     """Load configuration from environment or file."""

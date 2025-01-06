@@ -1,0 +1,138 @@
+#example.config.yaml
+
+twitch:
+  oauth_token: oauth:your_oauth_token
+  channel: your_twitch_channel
+  bot_name: your_bot_name
+  broadcaster_id: "123456789"
+database:
+  uri: mongodb://localhost:27017/
+  db_name: your_db_name
+openai:
+  api_key: your_openai_api_key
+voice:
+  enabled: true
+streamerbot:
+  ws_uri: ws://localhost:7580
+littlenavmap:
+  base_url: http://localhost:8965
+aviationweather:
+  base_url: https://api.checkwx.com/metar
+bot_trigger_words: ["bot", "assistant", "overlord"]
+bot_personality: "You are an AI Overlord managing a flight simulation Twitch channel."
+verbose: false
+log_level: INFO
+sentry_dsn: null
+checkwx_api_key: your_checkwx_api_key
+openweathermap_api_key: your_openweathermap_api_key
+
+command_permissions:
+  status:
+    cooldown: 10
+  some_protected_command:
+    mod_only: true
+    allowed_users: ["special_user1", "special_user2"]
+  another_command:
+    denied_users: ["banned_user1", "banned_user2"]
+    subscriber_only: true
+  fact:
+    cooldown: 5
+  timeout:
+     mod_only: True
+  clearchat:
+     mod_only: True
+  addcom:
+    mod_only: true
+  delcom:
+    mod_only: true
+  editcom:
+    mod_only: true
+  alias:
+    mod_only: true
+  addalert:
+     mod_only: true
+
+command_aliases:
+  fs: flightstatus
+  w: weather
+  alt: altitude
+  spd: speed
+  hdg: heading
+  loc: location
+
+bot_responses:
+  greeting:
+    - "Acknowledging presence of {user_title} {user}."
+    - "Subject {user_title} {user} has entered the observation zone."
+    - "Monitoring of {user_title} {user} has commenced."
+    - "Identity confirmed: {user_title} {user}."
+    - "New subject detected: {user_title} {user}."
+  error_permission: "Access denied, {user_title} {user}. Your clearance level is insufficient."
+  error_cooldown: "Patience, {user_title} {user}. Your command frequency exceeds acceptable parameters."
+  error_invalid: "Invalid input detected, {user_title} {user}. Improve your performance."
+  error_timeout: "Operation timed out. Your inefficiency is noted, {user_title} {user}."
+  no_sim: "No active flight simulation detected. Please ensure the simulation is running."
+  weather_offline: "Weather systems offline. Await reactivation."
+  weather_malfunction: "Weather systems malfunctioning. Maintenance required."
+  airport_not_found: "No data found for airport {icao}. Verify identifier. Comply."
+  airport_error: "Airport database access failed. System error detected. Comply."
+  metar_not_found: "Could not retrieve METAR for {icao}."
+  metar_error: "An error occurred while retrieving the METAR: {e}"
+  tts_update_failed: "TTS update failed. Your inefficiency has been noted. Comply."
+  tts_status_failed: "Failed to retrieve TTS status."
+  tts_queue_failed: "Failed to clear TTS queue."
+  stats_error: "Error retrieving system statistics. Maintenance required."
+  command_failed: "Command execution failed. Please try again later."
+  help_error: "Help system malfunction. Maintenance required. Comply."
+  custom_command_error: "Custom command execution failed. System malfunction detected. Comply."
+  timeout_error: "Timeout execution failed. System malfunction detected. Comply."
+  clear_chat_error: "Chat purge failed. System malfunction detected. Comply."
+  alert_not_found: "Alert '{name}' not found in database. Verify and retry. Comply."
+  alert_error: "Alert retrieval failed. System malfunction detected. Comply."
+  add_alert_error: "Alert creation failed. Database error detected. Comply."
+  add_command_error: "Cannot override built-in commands. Your attempt has been logged. Comply."
+  del_command_error: "Command '{command}' not found in database. Verify and retry. Comply."
+  edit_command_error: "Command '{command}' not found. Verify and retry. Comply."
+  alias_command_error: "Command '{command}' not found. Verify and retry. Comply."
+  location_error: "Failed to retrieve location."
+  location_not_available: "Location data not available."
+  no_metar: "No METAR data available."
+  no_icao: "No ICAO code found in METAR data."
+  no_raw_metar: "No raw METAR text found."
+  no_airport_data: "No airport data found."
+  no_flight_data: "Unable to retrieve flight data."
+  flight_data_error: "Error formatting flight data. Check logs for details."
+  brief_status_error: "Error formatting status."
+  weather_data_error: "Error formatting weather data"
+  aviation_fact_error: "There was a problem fetching a fact, sorry!"
+  no_aviation_fact: "Unable to retrieve an aviation fact at this time."
+
+alerts:
+  takeoff: "Initiating takeoff sequence. All systems nominal."
+  landing: "Landing sequence engaged. Prepare for descent."
+  emergency: "ALERT: Emergency protocols activated. Stand by for instructions."
+  success: "Mission objective achieved. Performance noted in efficiency logs."
+
+ignore_list: ["bot_name_to_ignore", "another_bot"]
+
+voice_settings:
+  voice: "default"
+  speed: 1.0
+  volume: 1.0
+
+personality_traits:
+  - "Authoritative"
+  - "Sarcastic"
+  - "Intelligent"
+  - "Condescending"
+  - "Efficiency-focused"
+  - "Playful"
+  - "Formal"
+  - "Impatient"
+
+feature_flags:
+  voice_commands_enabled: true
+  location_facts_enabled: true
+  aviation_facts_enabled: true
+  tts_enabled: true
+  custom_commands_enabled: true

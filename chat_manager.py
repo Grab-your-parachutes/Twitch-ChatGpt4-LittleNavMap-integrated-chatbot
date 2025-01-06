@@ -75,6 +75,32 @@ class ChatManager:
         self._processor_task = asyncio.create_task(self._process_message_queue())
         self._metrics_task = asyncio.create_task(self._update_metrics())
         self.logger.info("Chat manager started")
+        
+    async def should_filter_message(self, message: Message) -> bool:
+        """Check if a message should be filtered (ignored)."""
+        if message.echo:
+            return True  # Ignore messages from the bot itself
+
+        if message.author is None:
+            self.logger.warning("Message with no author detected.")
+            return True
+
+        author_name = message.author.name.lower()
+        if author_name in self.config.twitch.IGNORE_LIST:
+            return True  # Ignore messages from users in the ignore list
+        
+        if author_name == self.bot.nick.lower() or author_name == "grab_your_parachutes": 
+            return False # Do not filter bot's own messages or your username
+
+        if await self.detect_spam(message):
+            self.logger.warning(f"Spam detected from {author_name}: {message.content}")
+            return True
+
+        for phrase in self.blocked_phrases:
+            if phrase in message.content.lower():
+                self.logger.warning(f"Blocked phrase detected from {author_name}: {message.content}")
+                return True
+        return False
 
     async def handle_message(self, message: Message):
         """Main message handler."""

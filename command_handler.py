@@ -1,20 +1,16 @@
-# File: command_handler.py
-from typing import Any
-import logging
-import asyncio
-from typing import Dict, Callable, Any, Optional, List
+# command_handler.py
+from typing import Any, Dict, Callable, Optional, List, Union
 from functools import wraps
 from datetime import datetime, timedelta
-from dataclasses import dataclass
 from twitchio.ext import commands
 from twitchio.message import Message
+import logging
 from .config import Config
+from .aviation_weather_integration import AviationWeatherIntegration
 import json
 from pathlib import Path
-# Added Aviation Weather Dependency
-from .aviation_weather_integration import AviationWeatherIntegration
+from dataclasses import dataclass
 import re
-
 
 @dataclass
 class CommandUsage:
@@ -23,12 +19,19 @@ class CommandUsage:
     cooldown: int = 0
 
 class CommandPermission:
-    def __init__(self, mod_only: bool = False, broadcaster_only: bool = False, 
-                 vip_only: bool = False, subscriber_only: bool = False):
+    def __init__(self,
+                 mod_only: bool = False,
+                 broadcaster_only: bool = False,
+                 vip_only: bool = False,
+                 subscriber_only: bool = False,
+                 allowed_users: Optional[List[str]] = None,
+                 denied_users: Optional[List[str]] = None):
         self.mod_only = mod_only
         self.broadcaster_only = broadcaster_only
         self.vip_only = vip_only
         self.subscriber_only = subscriber_only
+        self.allowed_users = allowed_users or []
+        self.denied_users = denied_users or []
 
 def command_cooldown(seconds: int):
     """Decorator for command cooldown."""
@@ -56,32 +59,55 @@ def command_cooldown(seconds: int):
 
 def require_permission(permission: CommandPermission):
     """Decorator for command permissions."""
+
     def decorator(func):
         @wraps(func)
         async def wrapper(self, message: Message, *args, **kwargs):
+
+            author_name = message.author.name.lower()
+
+            # Check denied users FIRST
+            if author_name in permission.denied_users:
+                await message.channel.send(
+                    "You are not authorized to use this command. Comply."
+                )
+                return
+
+            # Check allowed users (overrides other checks except denied)
+            if permission.allowed_users and author_name not in permission.allowed_users:
+                await message.channel.send(
+                    "You are not authorized to use this command. Comply."
+                 )
+                return
+
             if permission.broadcaster_only and not message.author.is_broadcaster:
                 await message.channel.send(
-                    "This command is restricted to the broadcaster. Your attempt has been logged. Comply."
+                    "This command is restricted to the broadcaster. Comply."
                 )
                 return
+
             if permission.mod_only and not message.author.is_mod:
                 await message.channel.send(
-                    "This command requires moderator clearance. Access denied. Comply."
+                    "This command requires moderator clearance. Comply."
                 )
                 return
+
             if permission.vip_only and not message.author.is_vip:
                 await message.channel.send(
-                    "This command requires VIP status. Your access is insufficient. Comply."
+                    "This command requires VIP status. Comply."
                 )
                 return
+
             if permission.subscriber_only and not message.author.is_subscriber:
                 await message.channel.send(
-                    "This command is for subscribers only. Support the channel to gain access. Comply."
+                    "This command is for subscribers only. Comply."
                 )
                 return
+
             return await func(self, message, *args, **kwargs)
         return wrapper
     return decorator
+
 
 class CommandHandler:
     def __init__(self, bot):
@@ -90,10 +116,50 @@ class CommandHandler:
         self.command_usage: Dict[str, CommandUsage] = {}
         self.custom_commands: Dict[str, str] = {}
         self.command_aliases: Dict[str, str] = {}
-        self.aviation_weather: Optional[AviationWeatherIntegration] = None #Added Aviation Weather Integration
+        self.aviation_weather: Optional[AviationWeatherIntegration] = None
         self.initialize_commands()
         self.start_time = datetime.now()
         self.load_command_data()
+        self.apply_command_permissions()
+
+    def apply_command_permissions(self):
+        """Applies permissions loaded from config to commands."""
+        for command_name, permissions in self.bot.config.command_permissions.items():
+            if command_name in self.commands:
+                # Get the command function
+                command_func = self.commands[command_name]
+
+                # Create a CommandPermission object from config data
+                permission_obj = CommandPermission(
+                    mod_only=permissions.get("mod_only", False),
+                    broadcaster_only=permissions.get("broadcaster_only", False),
+                    vip_only=permissions.get("vip_only", False),
+                    subscriber_only=permissions.get("subscriber_only", False),
+                    allowed_users=permissions.get("allowed_users", []),
+                    denied_users=permissions.get("denied_users", [])
+                )
+
+                # Wrap the command function with the require_permission decorator
+                wrapped_command = require_permission(permission_obj)(command_func)
+
+                # Update the self.commands dictionary with the wrapped function
+                self.commands[command_name] = wrapped_command
+            else:
+                self.logger.warning(f"Permissions defined for unknown command: {command_name}")
+
+    @command_cooldown(30)
+    @require_permission(CommandPermission(mod_only=True))
+    async def reload_config_command(self, message: Message, *args):
+        """Reloads the bot configuration."""
+        try:
+            self.bot.config.reload()
+            self.apply_command_permissions()
+            self.bot.personality.load_state()
+            await message.channel.send("Configuration reloaded successfully. Comply.")
+            self.logger.info("Configuration reloaded via command.")
+        except Exception as e:
+            self.logger.error(f"Error reloading configuration: {e}", exc_info=True)
+            await message.channel.send("Configuration reload failed. System malfunction detected. Comply.")
 
     def initialize_commands(self):
         """Initialize bot commands."""
@@ -121,7 +187,9 @@ class CommandHandler:
             'ttssettings': self.tts_settings,
             'ttsqueue': self.tts_queue,
             'metar': self.metar_command,
-            'location': self.location_command
+            'location': self.location_command,
+            'fact': self.aviation_fact_command,
+            'reloadconfig': self.reload_config_command
         }
 
     async def handle_command(self, message: Any):
@@ -138,7 +206,7 @@ class CommandHandler:
                 command_func = self.commands[command_name]
                 self.logger.debug(f"Executing built-in command: {command_name}")
                 args = message.content.split()[1:]
-                await command_func(message, *args) # Pass the message and the arguments
+                await command_func(message, *args)
             elif command_name in self.custom_commands:
                 self.logger.debug(f"Executing custom command: {command_name}")
                 await self.handle_custom_command(message, command_name)
@@ -898,12 +966,17 @@ class CommandHandler:
           altimeter = altimeter_match.group(1) if altimeter_match else "Unknown"
           temperature = temperature_match.group(1) if temperature_match else "Unknown"
           dewpoint = temperature_match.group(2) if temperature_match else "Unknown"
+          
+          if wind_gust == "N/A":
+              wind_gust_str = "N/A"
+          else:
+              wind_gust_str = f"{wind_gust}"
 
           icao_spoken = " ".join(list(icao_code))
           report = (
               f"METAR for {icao_spoken} at {observation_time} Zulu. : "
-              f"Wind {wind_direction} degrees at {wind_speed} knots, gusts to {wind_gust} knots. : "  # Include gusts
-              f"Visibility {visibility} meters. : "
+              f"Wind {wind_direction} degrees at {wind_speed} knots, gusts to {wind_gust_str} knots. : "  # Include gusts
+              f"Visibility {int(visibility)} meters. : "
               f"Altimeter {altimeter} hectopascals. : "
               f"Temperature {temperature} degrees Celsius, dewpoint {dewpoint} degrees Celsius." # Use Celsius
           )
@@ -939,4 +1012,7 @@ class CommandHandler:
             self.logger.error(f"Error retrieving or sending location: {e}", exc_info=True)
             await message.channel.send("Failed to retrieve location.")
 
-    
+    @command_cooldown(5)
+    async def aviation_fact_command(self, message: Message, *args):
+        """Gets and announces an aviation fact."""
+        await self.bot.handle_aviation_fact_command(message)

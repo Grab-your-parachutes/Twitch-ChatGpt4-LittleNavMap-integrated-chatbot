@@ -9,13 +9,15 @@ import math
 
 from twitchio.ext import commands
 from openai import AsyncOpenAI
-from config import Config
-from database_manager import DatabaseManager
-from tts_manager import TTSManager
-from chat_manager import ChatManager
-from command_handler import CommandHandler
-from littlenavmap_integration import LittleNavmapIntegration
-from personality import PersonalityManager
+from .config import Config
+from .database_manager import DatabaseManager
+from .tts_manager import TTSManager
+from .chat_manager import ChatManager
+from .command_handler import CommandHandler
+from .littlenavmap_integration import LittleNavmapIntegration
+from .personality import PersonalityManager
+# Added Aviation Weather Dependency
+from .aviation_weather_integration import AviationWeatherIntegration
 
 class Bot(commands.Bot):
     def __init__(
@@ -25,7 +27,8 @@ class Bot(commands.Bot):
         db_manager: DatabaseManager,
         tts_manager: TTSManager,
         littlenavmap: LittleNavmapIntegration,
-        personality: PersonalityManager
+        personality: PersonalityManager,
+        aviation_weather: AviationWeatherIntegration, # Added AviationWeatherIntegration
     ):
         # Initialize parent class with required parameters
         super().__init__(
@@ -41,13 +44,13 @@ class Bot(commands.Bot):
         self.tts_manager = tts_manager
         self.littlenavmap = littlenavmap
         self.personality = personality
+        self.aviation_weather = aviation_weather  # Added AviationWeatherIntegration
         
         # These will be set by main.py after initialization
         self.chat_manager: Optional[ChatManager] = None
         self.command_handler: Optional[CommandHandler] = None
         
         self.bot_ready = asyncio.Event()
-        self._last_flight_update = None
         self._shutdown_event = asyncio.Event()
         self.start_time = datetime.now()
 
@@ -55,12 +58,15 @@ class Bot(commands.Bot):
         """Called once when the bot goes online."""
         self.logger.info(f"Bot is ready | {self.nick}")
         self.bot_ready.set()
+        if self.config._file_path:
+            self._config_watcher_task = asyncio.create_task(self._watch_config_file())
         
         # Start periodic tasks
         self.loop.create_task(self.periodic_flight_info_update())
         if self.config.voice.ENABLED:
             self.loop.create_task(self.process_voice_commands())
         self.loop.create_task(self.periodic_location_facts())
+        self.loop.create_task(self.periodic_aviation_facts())  # Add aviation facts
         
         # Send startup message
         startup_message = self.personality.format_response(
@@ -101,6 +107,10 @@ class Bot(commands.Bot):
     async def generate_chatgpt_response(self, message: str) -> str:
         """Generate a response using ChatGPT."""
         try:
+            if not self.config.openai.API_KEY:
+                self.logger.error("OpenAI API Key not configured.")
+                return "OpenAI API Key not configured. Please set the API key."
+
             conversation_history = await self.db_manager.get_conversation_history()
             
             messages = [{"role": "system", "content": self.config.bot_personality}]
@@ -168,6 +178,9 @@ class Bot(commands.Bot):
                     wind_speed_kts = round(sim_info.get('wind_speed', 0) * 1.943844)  # m/s to knots
                     wind_direction = round(sim_info.get('wind_direction', 0), 1)
                     vertical_speed_fpm = round(sim_info.get('vertical_speed', 0) * 196.85)  # m/s to ft/min
+                    true_airspeed = round(sim_info.get('true_airspeed', 0) * 1.943844) # m/s to knots
+                    indicated_speed = round(sim_info.get('indicated_speed', 0) * 1.943844)  # m/s to knots
+
                     
                     # Only process if we have valid altitude
                     if altitude_ft >= 0:
@@ -210,12 +223,11 @@ class Bot(commands.Bot):
                                 'wind_direction': wind_direction,
                                 'on_ground': altitude_agl < 1,
                                 'vertical_speed': vertical_speed_fpm,
-                                'true_airspeed': round(sim_info.get('true_airspeed', 0) * 1.943844),  # m/s to knots
-                                'indicated_speed': round(sim_info.get('indicated_speed', 0) * 1.943844)  # m/s to knots
+                                'true_airspeed': true_airspeed,
+                                'indicated_speed': indicated_speed
                             }
                         )
                         
-                        self._last_flight_update = datetime.now()
                     else:
                         self.logger.debug(f"Invalid altitude reading: {current_altitude}")
                 else:
@@ -232,21 +244,76 @@ class Bot(commands.Bot):
             
     async def process_voice_commands(self):
         """Process voice commands."""
+        if not self.config.voice.ENABLED:
+            return
+        
         while not self._shutdown_event.is_set():
             try:
-                # Placeholder for voice command processing
-                # This would involve using a voice recognition library
-                # and then parsing the recognized text for commands
-                # For now, just log the command
-                # Example:
-                # recognized_text = await self.voice_recognizer.recognize()
-                # if recognized_text:
-                #     self.logger.info(f"Voice command recognized: {recognized_text}")
-                #     await self.chat_manager.handle_voice_command(recognized_text)
                 await asyncio.sleep(0.1)
             except Exception as e:
                 self.logger.error(f"Error processing voice commands: {e}")
                 await asyncio.sleep(1)
+    
+    async def periodic_aviation_facts(self):
+        """Periodically announce interesting aviation facts."""
+        while not self._shutdown_event.is_set():
+            try:
+                fact = await self.generate_aviation_fact()
+                if fact:
+                    await self.chat_manager.send_message(
+                        self.config.twitch.CHANNEL.lower(),
+                        fact,
+                        tts=True  # Announce via TTS
+                    )
+
+                # Random interval between 5 and 15 minutes
+                interval = random.randint(300, 900)
+                await asyncio.sleep(interval)
+
+            except Exception as e:
+                self.logger.error(f"Error during periodic aviation fact update: {e}", exc_info=True)
+                await asyncio.sleep(60)  # Wait a minute before retrying
+
+
+    async def generate_aviation_fact(self) -> Optional[str]:
+        """Generate a random aviation fact using GPT."""
+        try:
+            if not self.config.openai.API_KEY:
+                self.logger.error("OpenAI API Key not configured.")
+                return "OpenAI API Key not configured. Please set the API key."
+
+            prompt = "Tell me a concise and interesting fact related to aviation or airplanes."  # Improve the prompt
+
+            response = await self.openai_client.chat.completions.create(
+                model=self.config.openai.MODEL,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=self.config.openai.MAX_TOKENS,
+                temperature=self.config.openai.TEMPERATURE
+            )
+
+            fact = response.choices[0].message.content.strip()
+            formatted_fact = self.personality.format_response(fact, {}) # Add personality
+            return formatted_fact  # Return the formatted fact
+        except Exception as e:
+            self.logger.error(f"Error generating aviation fact: {e}", exc_info=True)
+            return None  # Return None in case of errors
+        
+    async def handle_aviation_fact_command(self, message): # New function for command
+        """Handle the !fact command to get an aviation fact on demand."""
+        try:
+             fact = await self.generate_aviation_fact()
+             if fact:
+                 await self.chat_manager.send_message(
+                     message.channel.name,
+                     fact,
+                     tts=True  # Announce via TTS
+                 )
+             else:
+                await message.channel.send("Unable to retrieve an aviation fact at this time.")
+        except Exception as e:
+            self.logger.error(f"Error handling !fact command: {e}", exc_info=True)
+            await message.channel.send("There was a problem fetching a fact, sorry!")
+    
 
     async def handle_alert(self, alert_name: str, channel: str):
         """Handle alert triggers."""
@@ -278,17 +345,48 @@ class Bot(commands.Bot):
         self._shutdown_event.set()
         
         # Save personality state
-        self.personality.save_state()
+        try:
+            self.personality.save_state()
+        except Exception as e:
+            self.logger.error(f"Error saving personality state: {e}")
         
         # Close all managers
-        await self.tts_manager.close()
-        await self.db_manager.close()
-        await self.littlenavmap.stop()
+        try:
+            await self.tts_manager.close()
+        except Exception as e:
+            self.logger.error(f"Error closing TTS Manager: {e}")
+
+        try:
+            await self.db_manager.close()
+        except Exception as e:
+            self.logger.error(f"Error closing Database Manager: {e}")
+        
+        try:
+            await self.littlenavmap.stop()
+        except Exception as e:
+            self.logger.error(f"Error stopping LNM integration: {e}")
+
+        try:
+            await self.aviation_weather.stop()
+        except Exception as e:
+           self.logger.error(f"Error stopping Aviation Weather integration: {e}")
+           
+        if self._config_watcher_task:
+            self._config_watcher_task.cancel()
+        
         if self.chat_manager:
-            await self.chat_manager.close()
+            try:
+                await self.chat_manager.close()
+            except Exception as e:
+                self.logger.error(f"Error closing Chat Manager: {e}")               
+        
+
         
         # Close parent
-        await super().close()
+        try:
+             await super().close()
+        except Exception as e:
+            self.logger.error(f"Error closing the bot: {e}")
         
         self.logger.info("Bot shutdown complete")
 
@@ -299,6 +397,30 @@ class Bot(commands.Bot):
     async def __aexit__(self, exc_type, exc_val, exc_tb):
         await self.close()
 
+    async def _watch_config_file(self):
+        """Watch the config file for changes and reload."""
+        if not self.config._file_path:
+            self.logger.warning("No config file path available to watch.")
+            return
+
+        last_modified = os.path.getmtime(self.config._file_path)
+        while not self._shutdown_event.is_set():
+            try:
+                await asyncio.sleep(5)  # Check every 5 seconds
+                current_modified = os.path.getmtime(self.config._file_path)
+                if current_modified > last_modified:
+                    self.logger.info("Config file changed, reloading...")
+                    self.config.reload()
+                    self.command_handler.apply_command_permissions()
+                    self.personality.load_state()
+                    last_modified = current_modified
+            except FileNotFoundError:
+                self.logger.error("Config file not found, stopping config watcher.")
+                break
+            except Exception as e:
+                self.logger.error(f"Error watching config file: {e}", exc_info=True)
+                await asyncio.sleep(10)
+
     async def periodic_location_facts(self):
         """Periodically announce interesting facts about the current location."""
         while not self._shutdown_event.is_set():
@@ -307,7 +429,7 @@ class Bot(commands.Bot):
                 if sim_info and sim_info.get('active'):
                     latitude = sim_info.get('position', {}).get('lat')
                     longitude = sim_info.get('position', {}).get('lon')
-                    
+
                     if latitude is not None and longitude is not None:
                         self.logger.debug(f"Location data: Latitude={latitude}, Longitude={longitude}")
                         fact = await self.generate_location_fact(latitude, longitude)
@@ -317,37 +439,35 @@ class Bot(commands.Bot):
                                 fact,
                                 tts=True
                             )
-                
+
                 # Random interval between 5 and 15 minutes
                 interval = random.randint(300, 900)
                 await asyncio.sleep(interval)
             except Exception as e:
-                self.logger.error(f"Error during periodic location fact update: {e}")
+                self.logger.error(f"Error during periodic location fact update: {e}", exc_info=True)
                 await asyncio.sleep(60)
 
     async def generate_location_fact(self, latitude: float, longitude: float) -> Optional[str]:
         """Generate a fact about the current location using GPT-4."""
         try:
-            miles = 10
-            kilometers = self.miles_to_kilometers(miles)
+            if not self.config.openai.API_KEY:
+                 self.logger.error("OpenAI API Key not configured.")
+                 return "OpenAI API Key not configured. Please set the API key."
+
             prompt = (
-                f"Generate an interesting fact about a landmark or point of interest within {kilometers:.0f} kilometers (approximately {miles} miles) of latitude {latitude} and longitude {longitude}. "
-                "Keep it concise and engaging for a Twitch chat."
+                f"Generate an interesting fact about a landmark or point of interest near latitude {latitude} and longitude {longitude}. "
+                "Keep it concise and engaging for a Twitch chat. Do not include a distance."
             )
-            
+
             response = await self.openai_client.chat.completions.create(
                 model=self.config.openai.MODEL,
                 messages=[{"role": "user", "content": prompt}],
                 max_tokens=self.config.openai.MAX_TOKENS,
                 temperature=self.config.openai.TEMPERATURE
             )
-            
+
             fact = response.choices[0].message.content.strip()
             return self.personality.format_response(fact, {})
         except Exception as e:
             self.logger.error(f"Error generating location fact: {e}", exc_info=True)
             return None
-
-    def miles_to_kilometers(self, miles: float) -> float:
-        """Convert miles to kilometers."""
-        return miles * 1.60934

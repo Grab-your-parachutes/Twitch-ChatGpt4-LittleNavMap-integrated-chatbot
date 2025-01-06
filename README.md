@@ -14,9 +14,9 @@ This project provides an AI-powered chatbot for Twitch streamers focused on flig
 
 ## Installation
 
-**Clone the Repository:**
+1. **Clone the Repository:**
 
-git clone https://github.com/Grab-your-parachutes/Twitch-ChatGpt4-LittleNavMap-integrated-chatbot.git
+git clone https://github.com/your_username/ai-flight-control.git
 
 
 Set Up a Virtual Environment:
@@ -110,7 +110,7 @@ Commands
 
 !setgame (mod only): Sets the stream game/category (not yet implemented).
 
-This project will be in active development, there are files and functions present that are not yet fully integrated.
+
 
 Contributing
 
