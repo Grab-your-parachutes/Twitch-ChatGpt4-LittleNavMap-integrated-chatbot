@@ -112,6 +112,10 @@ Commands
 
 
 
+Development is ongoing, check back regularly. I'm actively seeking collaborations. I have yet to pay much attention to a UI though it is in progress. 
+
+
+
 Contributing
 
 Contributions are welcome! Feel free to open issues or submit pull requests.
