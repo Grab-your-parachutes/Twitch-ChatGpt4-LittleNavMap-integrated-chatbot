@@ -47,7 +47,7 @@ class TwitchConfig(BaseModel):
 
 class OpenAIConfig(BaseModel):
     API_KEY: str
-    MODEL: str = "gpt-4"
+    MODEL: str = "gpt-40-mini"
     MAX_TOKENS: int = 150
     TEMPERATURE: float = 0.7
 
