@@ -1,205 +1,121 @@
-# Twitch AI Overlord Bot
-
-This is a feature-rich Twitch bot designed to manage a flight simulation channel with an AI Overlord personality. It integrates with LittleNavmap for flight data, uses OpenAI for chat responses, and **Streamer.bot with Speaker.bot for TTS**.
+This project provides an AI-powered chatbot for Twitch streamers focused on flight simulation.  The bot integrates with Little Navmap, OpenAI's ChatGPT, text-to-speech (TTS) using Streamer.Bot, and a database for persistent storage.  It offers features like flight status updates, real-time weather information, AI-generated conversation, custom commands, alerts, and more, all presented with a distinct "AI Overlord" personality.
 
 ## Features
 
-*   **AI Overlord Personality:**
-    *   Defined personality with traits, speech patterns, interests, and quirks.
-    *   Manages user loyalty levels with titles and perks.
-    *   Issues random decrees in chat.
-*   **LittleNavmap Integration:**
-    *   Fetches real-time flight simulation data (altitude, speed, heading, position, wind, etc.).
-    *   Provides formatted flight status, weather, and airport information.
-*   **Command Handling:**
-    *   Robust command system with cooldowns and permissions.
-    *   Supports custom commands and aliases.
-    *   Includes commands for flight data, stream management, TTS, and more.
-*   **Chat Management:**
-    *   Filters spam and repeated messages.
-    *   Handles bot mentions and responds using OpenAI.
-    *   Tracks chat metrics and user activity.
-*   **Text-to-Speech (TTS):**
-    *   Uses **Streamer.bot with Speaker.bot** for TTS output.
-    *   Allows users to adjust voice, speed, and volume.
-*   **Database Integration:**
-    *   Uses MongoDB to store conversation history, user data, alerts, and flight data.
-    *   Performs periodic backups and metrics updates.
-*   **Configuration:**
-    *   Loads configuration from environment variables or a YAML file.
-    *   Includes validation for configuration values.
-*   **Logging:**
-    *   Comprehensive logging system for debugging and monitoring.
-*   **Error Handling:**
-    *   Graceful error handling throughout the application.
-*   **Asynchronous Operations:**
-    *   Uses `asyncio` for concurrent operations.
-*   **Sentry Integration:**
-    *   Optional integration with Sentry for error tracking.
-*   **Message Splitting:**
-    *   Automatically splits long messages into multiple parts to avoid Twitch character limits.
+* **Flight Status Integration:**  Real-time flight data displayed in chat, including altitude, speed, heading, and flight phase (using Little Navmap).
+* **AI Chat:**  Engages with viewers using OpenAI's ChatGPT, providing dynamic and contextual conversation.
+* **Text-to-Speech (TTS):**  Uses Streamer.Bot for voice alerts and responses, enhancing the interactive experience.
+* **Customizable Personality:**  The bot adopts an "AI Overlord" persona, issuing decrees, making sarcastic remarks, and engaging in playful banter.  This can be adjusted.
+* **Custom Commands:**  Moderators can add, delete, and edit custom commands for unique interactions.
+* **Alerts:**  Set up and trigger custom alerts for specific events or milestones.
+* **METAR Integration:** Fetches and displays real-world weather data in METAR format (using CheckWX).
+* **Database Persistence:**  Uses MongoDB to store conversation history, custom commands, user loyalty data, and alerts.
+* **Command Cooldowns and Permissions:**  Prevent command spam and restrict certain commands to moderators or other user groups.
 
-## Setup
+## Installation
 
-### Prerequisites
+1. **Clone the Repository:**
 
-*   Python 3.10 or higher
-*   MongoDB
-*   **Streamer.bot with Speaker.bot**
-*   LittleNavmap
-*   Twitch Account
-*   OpenAI API Key
+git clone https://github.com/your_username/ai-flight-control.git
 
-### Installation
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository_url>
-    cd <repository_directory>
-    ```
-2.  **Create a virtual environment:**
-    ```bash
-    python -m venv .venv
-    ```
-3.  **Activate the virtual environment:**
-    *   **Windows:**
-        ```bash
-        .venv\Scripts\activate
-        ```
-    *   **macOS/Linux:**
-        ```bash
-        source .venv/bin/activate
-        ```
-4.  **Install dependencies:**
-    ```bash
-    pip install -r requirements.txt
-    ```
-5.  **Configure environment variables:**
-    *   Create a `.env` file in the root directory based on `.example.env.txt`.
-    *   Fill in the required values for Twitch, OpenAI, **Streamer.bot**, MongoDB, etc.
-    *   Alternatively, you can set the environment variables directly in your system.
-    *   You can also use a `config.yaml` file by setting the `CONFIG_FILE` environment variable.
-6.  **Set up MongoDB:**
-    *   Ensure MongoDB is running and accessible.
-    *   Create a database with the name specified in your `.env` file (`MONGO_DB_NAME`).
-7.  **Set up Streamer.bot:**
-    *   Ensure Streamer.bot is running and accessible.
-    *   Configure the WebSocket URI in your `.env` file (`STREAMERBOT_WS_URI`).
-    *   **Note:** This bot uses **Speaker.bot** for TTS, which is a plugin for Streamer.bot.
-8.  **Set up LittleNavmap:**
-    *   Ensure LittleNavmap is running and accessible.
-    *   Configure the base URL in your `.env` file (`LITTLENAVMAP_URL`).
-9.  **Set up Sentry (Optional):**
-    *   Create a Sentry project and obtain the DSN.
-    *   Set the `SENTRY_DSN` environment variable.
+Set Up a Virtual Environment:
 
-### Running the Bot
+python3 -m venv .venv
+source .venv/bin/activate  # Linux/macOS
+.venv\Scripts\activate     # Windows
 
-1.  **Activate the virtual environment (if not already active):**
-    ```bash
-    .venv\Scripts\activate  # Windows
-    source .venv/bin/activate # macOS/Linux
-    ```
-2.  **Run the bot:**
-    ```bash
-    python main.py
-    ```
 
-### Testing
+Install Dependencies:
 
-1.  **Run tests:**
-    ```bash
-    pytest
-    ```
+pip install -r requirements.txt
 
-## Bot Commands
 
-### Flight Information
+Configuration:
 
-*   `!status` or `!flightstatus`: Get detailed flight status.
-*   `!brief`: Get a brief flight status update.
-*   `!weather`: Get current weather information.
-*   `!airport <ICAO>`: Get airport information.
+Create a .env file: Copy the .env.example file to .env and fill in the required values:
 
-### Stream Management (Moderator Only)
+TWITCH_OAUTH_TOKEN: Your Twitch OAuth token. Must begin with oauth:.
 
-*   `!settitle <title>`: Set stream title.
-*   `!setgame <game>`: Set stream game/category.
-*   `!timeout <username> <duration_in_seconds>`: Timeout a user.
-*   `!clearchat`: Clear chat messages.
-*   `!addalert <name> <message>`: Add a custom alert.
+TWITCH_CHANNEL: Your Twitch channel name.
 
-### Text-to-Speech (TTS)
+BOT_NAME: The bot's username on Twitch.
 
-*   `!tts [voice|speed|volume] [value]`: Update TTS settings.
+BROADCASTER_ID: Your Twitch broadcaster ID.
 
-### Bot Utility
+MONGO_URI: Your MongoDB connection URI.
 
-*   `!stats`: Get bot and command statistics.
-*   `!alert <name>`: Trigger a saved alert.
-*   `!say <message>`: Make the bot say something.
-*   `!help` or `!help <command>`: Display help information.
-*   `!addcom <command> <response>`: Add a custom command (Moderator Only).
-*   `!delcom <command>`: Delete a custom command (Moderator Only).
-*   `!editcom <command> <new response>`: Edit a custom command (Moderator Only).
-*   `!alias <new command> <existing command>`: Add a command alias (Moderator Only).
+MONGO_DB_NAME: The name of your MongoDB database.
 
-## Configuration
+CHATGPT_API_KEY: Your OpenAI API key.
 
-The bot can be configured using environment variables or a `config.yaml` file. The following settings are available:
+STREAMERBOT_WS_URI: Your Streamer.Bot WebSocket URI. Must begin with ws://.
 
-*   **Twitch:**
-    *   `TWITCH_OAUTH_TOKEN`: Twitch OAuth token.
-    *   `TWITCH_CHANNEL`: Twitch channel name.
-    *   `BOT_NAME`: Bot's Twitch username.
-    *   `BROADCASTER_ID`: Twitch broadcaster ID.
-    *   `BOT_PREFIX`: Command prefix (default: `!`).
-*   **Database:**
-    *   `MONGO_URI`: MongoDB connection URI.
-    *   `MONGO_DB_NAME`: MongoDB database name.
-*   **OpenAI:**
-    *   `CHATGPT_API_KEY`: OpenAI API key.
-    *   `OPENAI_MODEL`: OpenAI model (default: `gpt-4`).
-    *   `OPENAI_MAX_TOKENS`: Maximum tokens for OpenAI responses.
-    *   `OPENAI_TEMPERATURE`: Temperature for OpenAI responses.
-*   **Voice:**
-    *   `VOICE_ENABLED`: Enable voice commands (default: `True`).
-    *   `VOICE_PREFIX`: Voice command prefix (default: `Hey Overlord`).
-    *   `VOICE_COMMAND_TIMEOUT`: Voice command timeout.
-    *   `VOICE_COMMAND_PHRASE_LIMIT`: Voice command phrase limit.
-    *   `VOICE_COMMAND_LANGUAGE`: Voice command language (default: `en-US`).
-*   **Streamer.bot:**
-    *   `STREAMERBOT_WS_URI`: Streamer.bot WebSocket URI.
-*   **LittleNavmap:**
-    *   `LITTLENAVMAP_URL`: LittleNavmap API base URL.
-*   **Bot:**
-    *   `BOT_TRIGGER_WORDS`: Comma-separated list of words that trigger the bot.
-    *   `BOT_PERSONALITY`: Bot's personality description.
-    *   `VERBOSE`: Enable verbose logging (default: `False`).
-    *   `CONFIG_FILE`: Path to a YAML configuration file (optional).
-    *   `SENTRY_DSN`: Sentry DSN for error tracking (optional).
+LITTLENAVMAP_URL: The URL of your Little Navmap instance (including port if necessary). Defaults to http://localhost:8965.
 
-## Contributing
+OPENWEATHERMAP_API_KEY: Your OpenWeatherMap API key.
 
-Contributions are welcome! Please follow these steps:
+CHECKWX_API_KEY: Your CheckWX API key.
 
-1.  Fork the repository.
-2.  Create a new branch for your feature or bug fix.
-3.  Make your changes and commit them with clear messages.
-4.  Push your branch to your fork.
-5.  Submit a pull request.
+Adjust Other Settings: You can customize the bot's personality, trigger words, commands, and other settings in the config.py and personality.py files.
 
-## License
+Usage
+Start Little Navmap: Ensure Little Navmap is running and its web server is enabled.
 
-This project is licensed under the [MIT License] 
-Copyright <2024> <Matthew Cummins>
+Start Streamer.Bot: Make sure Streamer.Bot is running and connected to your Twitch channel. Set up a Speaker.Bot action in Streamer.Bot to receive WebSocket commands on a specified port. Streamer.Bot will output the synthesised speech to your chosen audio device.
 
-Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to deal in the Software without restriction, including without limitation the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software, and to permit persons to whom the Software is furnished to do so, subject to the following conditions:
+Run the Bot:
 
-The above copyright notice and this permission notice shall be included in all copies or substantial portions of the Software.
+python main.py
 
-THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE..
 
-## Contact
+The bot will connect to Twitch and begin listening for commands and mentions in your channel.
 
-If you have any questions or suggestions, feel free to contact me at xbard at protonmail.com.
+Commands
+!status: Displays detailed current flight status information.
+
+!brief: Provides a concise flight status summary.
+
+!weather: Shows current weather conditions in the simulator.
+
+!metar <ICAO_CODE>: Retrieves and displays real-world weather data in METAR format for the specified ICAO code.
+
+!airport <ICAO>: Gets information about an airport.
+
+!location: Show's the aircrafts latitude and longitude.
+
+!stats: Displays bot statistics and uptime.
+
+!help: Shows the list of available commands.
+
+!addcom (mod only): Adds a custom command.
+
+!delcom (mod only): Deletes a custom command.
+
+!editcom (mod only): Edits a custom command.
+
+!alias (mod only): Creates an alias for an existing command.
+
+!timeout <username> <duration> (mod only): Times out a user in chat.
+
+!clearchat (mod only): Clears the chat.
+
+!addalert (mod only): Adds a custom alert.
+
+!alert: Triggers a saved alert.
+
+!say: Makes the bot say a message.
+
+!settitle (mod only): Sets the stream title (not yet implemented).
+
+!setgame (mod only): Sets the stream game/category (not yet implemented).
+
+
+
+Contributing
+
+Contributions are welcome! Feel free to open issues or submit pull requests.
+
+License
+
+This project is licensed under the MIT License.

@@ -29,4 +29,8 @@ pytest-cov==4.1.0
 # Development tools (optional)
 black==24.1.1 
 flake8==7.0.0 
-isort==5.13.2 
+isort==5.13.2
+fastapi==0.110.0
+uvicorn==0.27.1
+python-multipart==0.0.9
+requests==2.31.0
