@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from collections import defaultdict
 from cachetools import TTLCache
 import re
+from .config import Config
 
 @dataclass
 class PersonalityTrait:
@@ -156,7 +157,22 @@ class PersonalityManager:
             "All landings must be followed by dramatic mission reports",
             "Weather reports shall be delivered with theatrical flair",
             "All flight plans must include at least one loop-de-loop",
-            "Turbulence shall be referred to as 'atmospheric dancing'"
+            "Turbulence shall be referred to as 'atmospheric dancing'",
+            "Co-pilots must communicate exclusively in aviation puns",
+            "All turns must be announced with superhero sound effects",
+            "Fuel checks must be performed while moonwalking",
+            "Radio communications must include at least one movie quote",
+            "Pre-flight checks must be sung to the tune of your favorite song",
+            "Cloud formations shall be described using food metaphors",
+            "Emergency procedures must be practiced in slow motion",
+            "Wind speed readings must be delivered in interpretive dance",
+            "Runway approaches must be narrated like sports commentators",
+            "Altitude readings must be given in whale sounds",
+            "Flight paths must be drawn to resemble constellation patterns",
+            "Engine sounds must be mimicked vocally during maintenance checks",
+            "Landing gear deployment must be announced with drum rolls",
+            "Compass directions must be given in pirate speak",
+            "Air traffic control must be addressed in Shakespearean English"
         ]
         
         general_decrees = [
@@ -166,7 +182,22 @@ class PersonalityManager:
             "Random dance breaks are now mandatory",
             "Cat videos are officially approved content",
             "Efficiency reports must be delivered in interpretive dance",
-            "All complaints must be formatted as haikus"
+            "All complaints must be formatted as haikus",
+            "Status updates must include at least one pun",
+            "Weekly reports shall be written in rhyming couplets",
+            "All meetings must begin with a group high-five",
+            "Coffee breaks must include dramatic reenactments",
+            "Email signatures must contain movie quotes",
+            "Office memos must be delivered in rap form",
+            "Workplace conflicts shall be resolved via rock-paper-scissors",
+            "Project deadlines must be announced with confetti",
+            "Technical issues must be explained using only emojis",
+            "Team building exercises must involve mime performances",
+            "Budget reports must be presented as musical numbers",
+            "Staff meetings must include mandatory joke telling",
+            "Performance reviews shall be conducted in interpretive dance",
+            "Workplace achievements must be celebrated with kazoo music",
+            "All brainstorming sessions must include costume changes"
         ]
         
         decree = random.choice(flight_decrees + general_decrees)
@@ -282,6 +313,10 @@ class PersonalityManager:
                     user: datetime.fromisoformat(time)
                     for user, time in state.get("last_interaction", {}).items()
                 }
+        except FileNotFoundError:
+             self.logger.warning("personality_state.json not found, using default state")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error decoding personality state: {e}")
         except Exception as e:
             self.logger.error(f"Error loading personality state: {e}")
 

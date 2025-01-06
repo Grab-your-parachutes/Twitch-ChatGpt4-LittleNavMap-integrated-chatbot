@@ -7,7 +7,8 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 import asyncio
-from config import Config
+from src.config import Config
+import backoff
 
 @dataclass
 class DatabaseMetrics:
@@ -37,45 +38,43 @@ class DatabaseManager:
         self.collections: Dict[str, AsyncIOMotorCollection] = {}
         self.metrics = DatabaseMetrics()
         self._connection_retries = 0
-        self._max_retries = 3
+        self._max_retries = 5
         self._retry_delay = 5
         self._connected = asyncio.Event()
         self._backup_task: Optional[asyncio.Task] = None
         self._metrics_task: Optional[asyncio.Task] = None
 
+    @backoff.on_exception(backoff.expo, ConnectionFailure, max_tries=5)
     async def connect(self) -> None:
-        """Connect to MongoDB with retry mechanism."""
-        while self._connection_retries < self._max_retries:
-            try:
-                self.client = AsyncIOMotorClient(
-                    self.config.database.URI,
-                    maxPoolSize=self.config.database.MAX_POOL_SIZE,
-                    serverSelectionTimeoutMS=self.config.database.TIMEOUT_MS
-                )
+        """Connect to MongoDB with exponential backoff."""
+        try:
+            self.client = AsyncIOMotorClient(
+                self.config.database.URI,
+                maxPoolSize=self.config.database.MAX_POOL_SIZE,
+                serverSelectionTimeoutMS=self.config.database.TIMEOUT_MS
+            )
+            
+            # Test the connection
+            await self.client.admin.command('ping')
+            
+            self.db = self.client[self.config.database.DB_NAME]
+            await self._initialize_collections()
+            await self.ensure_indexes()
+            
+            self._connected.set()
+            self.logger.info("Successfully connected to MongoDB")
+            
+            # Start background tasks
+            self._backup_task = asyncio.create_task(self._periodic_backup())
+            self._metrics_task = asyncio.create_task(self._periodic_metrics_update())
+            
+            return
                 
-                # Test the connection
-                await self.client.admin.command('ping')
-                
-                self.db = self.client[self.config.database.DB_NAME]
-                await self._initialize_collections()
-                await self.ensure_indexes()
-                
-                self._connected.set()
-                self.logger.info("Successfully connected to MongoDB")
-                
-                # Start background tasks
-                self._backup_task = asyncio.create_task(self._periodic_backup())
-                self._metrics_task = asyncio.create_task(self._periodic_metrics_update())
-                
-                return
-                
-            except ConnectionFailure as e:
-                self._connection_retries += 1
-                self.logger.error(f"Connection attempt {self._connection_retries} failed: {e}")
-                if self._connection_retries < self._max_retries:
-                    await asyncio.sleep(self._retry_delay)
-                else:
-                    raise ConnectionFailure("Max connection retries reached")
+        except Exception as e:
+            self.status = "error"
+            self._connected.clear()
+            self.logger.error(f"Failed to connect to MongoDB: {e}", exc_info=True)
+            raise
 
     async def _initialize_collections(self) -> None:
         """Initialize all required collections."""
@@ -120,7 +119,7 @@ class DatabaseManager:
             
             self.logger.info("Database indexes created successfully")
         except OperationFailure as e:
-            self.logger.error(f"Failed to create indexes: {e}")
+            self.logger.error(f"Failed to create indexes: {e}", exc_info=True)
             raise
 
     async def save_conversation(self, user_message: str, bot_response: str, 
@@ -232,8 +231,11 @@ class DatabaseManager:
             try:
                 await asyncio.sleep(3600)  # Backup every hour
                 await self._create_backup()
+            except asyncio.CancelledError:
+                 break
             except Exception as e:
                 self.logger.error(f"Backup failed: {e}")
+                await asyncio.sleep(60)
 
     async def _create_backup(self) -> None:
         """Create a database backup."""
@@ -267,8 +269,11 @@ class DatabaseManager:
             try:
                 await asyncio.sleep(300)  # Update every 5 minutes
                 await self._update_metrics()
+            except asyncio.CancelledError:
+                  break
             except Exception as e:
                 self.logger.error(f"Metrics update failed: {e}")
+                await asyncio.sleep(60)
 
     async def _update_metrics(self) -> None:
         """Update database metrics."""

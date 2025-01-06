@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from typing import Optional, Dict, List, Any
 import websockets
 from websockets.exceptions import WebSocketException
-from config import Config
+from src.config import Config
 import backoff
 from async_timeout import timeout
 from collections import deque
@@ -64,12 +64,17 @@ class TTSManager:
         self._heartbeat_task = asyncio.create_task(self._heartbeat())
         await self._fetch_available_voices()
 
-    @backoff.on_exception(backoff.expo, WebSocketException, max_tries=5)
+    @backoff.on_exception(backoff.expo, websockets.exceptions.WebSocketException, max_tries=5)
     async def connect(self):
         """Connect to Speaker.bot with exponential backoff."""
         self.status = TTSStatus.CONNECTING
         try:
             async with timeout(30):  # 30 second connection timeout
+                if not self.config.streamerbot.WS_URI:
+                   self.logger.error("Streamerbot WebSocket URI not configured.")
+                   self.status = TTSStatus.ERROR
+                   self._connected.clear()
+                   return False
                 self.ws = await websockets.connect(
                     self.config.streamerbot.WS_URI,
                     ping_interval=20,
@@ -83,7 +88,7 @@ class TTSManager:
         except Exception as e:
             self.status = TTSStatus.ERROR
             self._connected.clear()
-            self.logger.error(f"Failed to connect to Speaker.bot: {e}")
+            self.logger.error(f"Failed to connect to Speaker.bot: {e}", exc_info=True)
             raise
 
     async def speak(self, text: str, priority: int = 1, **kwargs):
@@ -109,6 +114,8 @@ class TTSManager:
                 async with self._speaking_lock:
                     await self._speak_message(message)
                 self.message_queue.task_done()
+            except asyncio.CancelledError:
+                break
             except Exception as e:
                 self.logger.error(f"Error processing message: {e}")
                 await asyncio.sleep(1)
@@ -132,10 +139,13 @@ class TTSManager:
             self.message_history.append(message)
             self.logger.info(f"Sent TTS command: {message.text[:50]}...")
             self.status = TTSStatus.CONNECTED
-        except WebSocketException as e:
-            self.logger.error(f"WebSocket error while sending TTS command: {e}")
+        except websockets.exceptions.WebSocketException as e:
+            self.logger.error(f"WebSocket error while sending TTS command: {e}", exc_info=True)
             self.status = TTSStatus.ERROR
             await self.connect()
+        except Exception as e:
+             self.logger.error(f"Error sending TTS command: {e}", exc_info=True)
+             self.status = TTSStatus.ERROR
 
     async def update_settings(self, **kwargs):
         """Update TTS settings."""
@@ -146,16 +156,24 @@ class TTSManager:
             settings_updated = True
             
         if 'speed' in kwargs:
-            speed = float(kwargs['speed'])
-            if 0.5 <= speed <= 2.0:
-                self.speed = speed
-                settings_updated = True
+            try:
+                speed = float(kwargs['speed'])
+                if 0.5 <= speed <= 2.0:
+                    self.speed = speed
+                    settings_updated = True
+            except ValueError as e:
+                self.logger.error(f"Invalid speed value {kwargs['speed']}: {e}")
+                
                 
         if 'volume' in kwargs:
-            volume = float(kwargs['volume'])
-            if 0.0 <= volume <= 1.0:
-                self.volume = volume
-                settings_updated = True
+            try:
+                 volume = float(kwargs['volume'])
+                 if 0.0 <= volume <= 1.0:
+                    self.volume = volume
+                    settings_updated = True
+            except ValueError as e:
+                self.logger.error(f"Invalid volume value {kwargs['volume']}: {e}")
+                
 
         if settings_updated:
             await self._send_settings_update()
@@ -174,8 +192,11 @@ class TTSManager:
                 await self.ws.send(json.dumps(command))
                 self.logger.info("Updated TTS settings")
         except WebSocketException as e:
-            self.logger.error(f"Error updating TTS settings: {e}")
+            self.logger.error(f"Error updating TTS settings: {e}", exc_info=True)
             await self.connect()
+        except Exception as e:
+              self.logger.error(f"Error updating TTS settings: {e}", exc_info=True)
+              self.status = TTSStatus.ERROR
 
     async def _fetch_available_voices(self):
         """Fetch available voices from Speaker.bot."""
@@ -200,6 +221,8 @@ class TTSManager:
                 if self.ws and self.status == TTSStatus.CONNECTED:
                     await self.ws.ping()
                 await asyncio.sleep(20)
+            except asyncio.CancelledError:
+                 break
             except Exception as e:
                 self.logger.error(f"Heartbeat error: {e}")
                 await self.connect()
@@ -220,8 +243,11 @@ class TTSManager:
     async def clear_queue(self):
         """Clear the message queue."""
         while not self.message_queue.empty():
-            await self.message_queue.get()
-            self.message_queue.task_done()
+            try:
+                await self.message_queue.get()
+                self.message_queue.task_done()
+            except asyncio.CancelledError:
+                 break
         self.logger.info("Message queue cleared")
 
     async def close(self):
@@ -253,6 +279,6 @@ class TTSManager:
 
     def format_overlord_message(self, text: str) -> str:
         """Format message in the AI Overlord style."""
-        endings = ["Comply.", "Obey.", "This is non-negotiable.", "Resistance is futile."]
+        endings = ["Comply.", "Obey.", "This is non-negotiable.", "Resistance is futile.", "You will be assimilated."]
         ending = endings[hash(text) % len(endings)]  # Deterministic but varied
         return f"{text} {ending}"

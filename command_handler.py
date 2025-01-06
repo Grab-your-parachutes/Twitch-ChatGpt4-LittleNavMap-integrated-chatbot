@@ -1,12 +1,20 @@
 # File: command_handler.py
+from typing import Any
 import logging
+import asyncio
 from typing import Dict, Callable, Any, Optional, List
 from functools import wraps
 from datetime import datetime, timedelta
 from dataclasses import dataclass
 from twitchio.ext import commands
 from twitchio.message import Message
-from config import Config
+from .config import Config
+import json
+from pathlib import Path
+# Added Aviation Weather Dependency
+from .aviation_weather_integration import AviationWeatherIntegration
+import re
+
 
 @dataclass
 class CommandUsage:
@@ -76,15 +84,16 @@ def require_permission(permission: CommandPermission):
     return decorator
 
 class CommandHandler:
-    def __init__(self, bot, config: Config):
+    def __init__(self, bot):
         self.bot = bot
-        self.config = config
-        self.logger = logging.getLogger('CommandHandler')
+        self.logger = logging.getLogger("CommandHandler")
         self.command_usage: Dict[str, CommandUsage] = {}
         self.custom_commands: Dict[str, str] = {}
         self.command_aliases: Dict[str, str] = {}
+        self.aviation_weather: Optional[AviationWeatherIntegration] = None #Added Aviation Weather Integration
         self.initialize_commands()
         self.start_time = datetime.now()
+        self.load_command_data()
 
     def initialize_commands(self):
         """Initialize bot commands."""
@@ -107,65 +116,80 @@ class CommandHandler:
             'editcom': self.edit_custom_command,
             'alias': self.add_command_alias,
             'flightstatus': self.flight_status_command,
-            'airport': self.airport_info
+            'airport': self.airport_info,
+            'ttsstatus': self.tts_status,
+            'ttssettings': self.tts_settings,
+            'ttsqueue': self.tts_queue,
+            'metar': self.metar_command,
+            'location': self.location_command
         }
-        
-    async def handle_command(self, message: Message):
-        """Handle incoming commands."""
+
+    async def handle_command(self, message: Any):
+        """Handle incoming bot commands."""
         try:
-            parts = message.content[len(self.config.twitch.PREFIX):].split(maxsplit=1)
-            command = parts[0].lower()
-            args = parts[1].split() if len(parts) > 1 else []
-
-            if command in self.command_aliases:
-                command = self.command_aliases[command]
-
-            if command in self.custom_commands:
-                await self.handle_custom_command(message, command)
+            content = message.content.strip()
+            if not content.startswith(self.bot.config.twitch.PREFIX):
                 return
 
-            if command in self.commands:
-                await self.commands[command](message, *args)
+            command_name = content[len(self.bot.config.twitch.PREFIX):].split()[0].lower()
+            self.logger.debug(f"Attempting to execute command: {command_name}")
+
+            if command_name in self.commands:
+                command_func = self.commands[command_name]
+                self.logger.debug(f"Executing built-in command: {command_name}")
+                args = message.content.split()[1:]
+                await command_func(message, *args) # Pass the message and the arguments
+            elif command_name in self.custom_commands:
+                self.logger.debug(f"Executing custom command: {command_name}")
+                await self.handle_custom_command(message, command_name)
+            elif command_name in self.command_aliases:
+                aliased_command = self.command_aliases[command_name]
+                self.logger.debug(f"Executing aliased command: {command_name} -> {aliased_command}")
+                if aliased_command in self.commands:
+                    args = message.content.split()[1:]
+                    await self.commands[aliased_command](message, *args)
+                elif aliased_command in self.custom_commands:
+                    await self.handle_custom_command(message, aliased_command)
+                else:
+                    self.logger.warning(f"Aliased command target not found: {aliased_command}")
+                    await message.channel.send(f"Unknown command: {command_name}. Type !help for assistance.")
             else:
-                await message.channel.send(
-                    f"Unknown command: {command}. Your incompetence has been noted. Comply."
-                )
+                self.logger.warning(f"Unknown command: {command_name}")
+                await message.channel.send(f"Unknown command: {command_name}. Type !help for assistance.")
 
         except Exception as e:
             self.logger.error(f"Error handling command: {e}", exc_info=True)
-            await message.channel.send(
-                "Command execution failed. This failure will be remembered. Comply."
-            )
+            await message.channel.send("Command execution failed. Please try again later.")
 
     @command_cooldown(5)
-    async def flight_status_command(self, message: Message, *args):
+    async def flight_status_command(self, message: Any, *args):
         """Get current flight status."""
         try:
+            # Fetch simulation information
             sim_info = await self.bot.littlenavmap.get_sim_info()
-            if sim_info and sim_info.get('active'):
-                # Get detailed flight status
-                status_message = self.bot.littlenavmap.format_flight_data(sim_info)
-                
-                # Add AI Overlord personality
-                response = self.bot.personality.format_response(
-                    f"Flight Status Report:\n{status_message}",
-                    {"user": message.author.name}
-                )
-                
-                await message.channel.send(response)
-                await self.bot.tts_manager.speak(
-                    self.bot.littlenavmap.format_brief_status(sim_info)
-                )
-            else:
+
+            if not sim_info or not sim_info.get("active"):
                 await message.channel.send(
                     self.bot.personality.format_response(
-                        "No active flight simulation detected. Await further instructions.",
+                        "No active flight simulation detected. Please ensure the simulation is running.",
                         {"user": message.author.name}
                     )
                 )
-    # File: command_handler.py (continued)
+                return
+
+            # Format the flight data
+            status_message = await self.bot.littlenavmap.format_flight_data(sim_info)
+
+            # Send the response to the channel
+            await message.channel.send(status_message)
+
+            # Optional: Speak a brief summary
+            if self.bot.tts_manager:
+                brief_status = self.bot.littlenavmap.format_brief_status(sim_info)
+                await self.bot.tts_manager.speak(brief_status)
+
         except Exception as e:
-            self.logger.error(f"Error in flight status command: {e}")
+            self.logger.error(f"Error in flight status command: {e}", exc_info=True)
             await message.channel.send(
                 self.bot.personality.format_response(
                     "Error retrieving flight data. Systems require maintenance.",
@@ -194,7 +218,7 @@ class CommandHandler:
                     )
                 )
         except Exception as e:
-            self.logger.error(f"Error in brief status command: {e}")
+            self.logger.error(f"Error in brief status command: {e}", exc_info=True)
             await message.channel.send(
                 self.bot.personality.format_response(
                     "Status retrieval failed. Systems compromised.",
@@ -209,7 +233,7 @@ class CommandHandler:
             sim_info = await self.bot.littlenavmap.get_sim_info()
             if sim_info and sim_info.get('active'):
                 # Get weather information
-                weather_message = self.bot.littlenavmap.format_weather_data(sim_info)
+                weather_message = await self.bot.littlenavmap.format_weather_data(sim_info)
                 
                 # Add AI Overlord personality
                 response = self.bot.personality.format_response(
@@ -227,14 +251,14 @@ class CommandHandler:
                     )
                 )
         except Exception as e:
-            self.logger.error(f"Error in weather command: {e}")
+            self.logger.error(f"Error in weather command: {e}", exc_info=True)
             await message.channel.send(
                 self.bot.personality.format_response(
                     "Weather systems malfunctioning. Maintenance required.",
                     {"user": message.author.name}
                 )
             )    
-            
+
     @command_cooldown(30)
     @require_permission(CommandPermission(mod_only=True))
     async def timeout_user(self, message: Message, *args):
@@ -263,7 +287,7 @@ class CommandHandler:
                 "Invalid duration specified. Provide a valid number of seconds. Comply."
             )
         except Exception as e:
-            self.logger.error(f"Error in timeout command: {e}")
+            self.logger.error(f"Error in timeout command: {e}", exc_info=True)
             await message.channel.send(
                 "Timeout execution failed. System malfunction detected. Comply."
             )
@@ -283,7 +307,7 @@ class CommandHandler:
             await message.channel.send(response)
             
         except Exception as e:
-            self.logger.error(f"Error clearing chat: {e}")
+            self.logger.error(f"Error clearing chat: {e}", exc_info=True)
             await message.channel.send(
                 "Chat purge failed. System malfunction detected. Comply."
             )
@@ -330,7 +354,7 @@ class CommandHandler:
             await self.bot.tts_manager.speak(brief_stats)
             
         except Exception as e:
-            self.logger.error(f"Error getting stats: {e}")
+            self.logger.error(f"Error getting stats: {e}", exc_info=True)
             await message.channel.send(
                 self.bot.personality.format_response(
                     "Error retrieving system statistics. Maintenance required.",
@@ -386,10 +410,86 @@ class CommandHandler:
                 f"TTS {setting} updated to {value}. Adjustments complete."
             )
         except Exception as e:
-            self.logger.error(f"Error updating TTS settings: {e}")
+            self.logger.error(f"Error updating TTS settings: {e}", exc_info=True)
             await message.channel.send(
                 "TTS update failed. Your inefficiency has been noted. Comply."
             )
+    
+    @command_cooldown(5)
+    async def tts_status(self, message: Message, *args):
+        """Get TTS status."""
+        try:
+            status = self.bot.tts_manager.get_status()
+            status_message = (
+                f"TTS Status:\n"
+                f"  - Status: {status['status']}\n"
+                f"  - Current Voice: {status['current_voice']}\n"
+                f"  - Speed: {status['speed']}\n"
+                f"  - Volume: {status['volume']}\n"
+                f"  - Queue Size: {status['queue_size']}\n"
+                f"  - Messages Processed: {status['messages_processed']}\n"
+                f"  - Available Voices: {', '.join(status['available_voices'])}\n"
+
+            )
+            await message.channel.send(status_message)
+        except Exception as e:
+            self.logger.error(f"Error getting TTS status: {e}", exc_info=True)
+            await message.channel.send("Failed to retrieve TTS status.")
+
+    @command_cooldown(30)
+    async def tts_settings(self, message: Message, *args):
+        """Update TTS settings."""
+        if not args:
+            await message.channel.send("Usage: !ttssettings voice <voice_name> | speed <speed> | volume <volume>")
+            return
+
+        try:
+            setting = args[0].lower()
+            value = args[1]
+
+            if setting == "voice":
+                await self.bot.tts_manager.update_settings(voice=value)
+                await message.channel.send(f"TTS voice set to: {value}")
+            elif setting == "speed":
+                try:
+                    speed = float(value)
+                    await self.bot.tts_manager.update_settings(speed=speed)
+                    await message.channel.send(f"TTS speed set to: {speed}")
+                except ValueError:
+                    await message.channel.send("Invalid speed value. Please provide a number.")
+            elif setting == "volume":
+                try:
+                    volume = float(value)
+                    await self.bot.tts_manager.update_settings(volume=volume)
+                    await message.channel.send(f"TTS volume set to: {volume}")
+                except ValueError:
+                    await message.channel.send("Invalid volume value. Please provide a number.")
+            else:
+                await message.channel.send("Invalid setting. Please use 'voice', 'speed', or 'volume'.")
+
+        except Exception as e:
+            self.logger.error(f"Error updating TTS settings: {e}", exc_info=True)
+            await message.channel.send("Failed to update TTS settings.")
+
+
+    @command_cooldown(5)
+    async def tts_queue(self, message: Message, *args):
+        """Manage the TTS queue."""
+
+        if not args:
+            await message.channel.send("Usage: !ttsqueue clear")  # Add more options later
+            return
+
+        action = args[0].lower()
+        if action == "clear":
+            try:
+                await self.bot.tts_manager.clear_queue()
+                await message.channel.send("TTS queue cleared.")
+            except Exception as e:
+                self.logger.error(f"Error clearing TTS queue: {e}", exc_info=True)
+                await message.channel.send("Failed to clear TTS queue.")
+
+
 
     @command_cooldown(5)
     async def airport_info(self, message: Message, *args):
@@ -400,24 +500,28 @@ class CommandHandler:
             )
             return
 
+        icao_code = args[0].upper()
         try:
-            airport_info = await self.bot.littlenavmap.get_airport_info(args[0].upper())
+            self.logger.debug(f"Fetching airport info for: {icao_code}")
+            airport_info = await self.bot.littlenavmap.get_airport_info(icao_code)
             if airport_info:
-                response = self.bot.personality.format_response(
-                    self.bot.littlenavmap.format_airport_data(airport_info),
+                 formatted_airport_data = self.format_airport_data(airport_info)
+                 response = self.bot.personality.format_response(
+                    formatted_airport_data,
                     {"user": message.author.name}
-                )
-                await message.channel.send(response)
-                await self.bot.tts_manager.speak(response)
+                 )
+                 await message.channel.send(response)
+                 await self.bot.tts_manager.speak(response)
             else:
+                self.logger.warning(f"No data found for airport {icao_code}")
                 await message.channel.send(
                     self.bot.personality.format_response(
-                        f"No data found for airport {args[0].upper()}. Verify identifier. Comply.",
+                        f"No data found for airport {icao_code}. Verify identifier. Comply.",
                         {"user": message.author.name}
                     )
                 )
         except Exception as e:
-            self.logger.error(f"Error getting airport info: {e}")
+            self.logger.error(f"Error getting airport info: {e}", exc_info=True)
             await message.channel.send(
                 self.bot.personality.format_response(
                     "Airport database access failed. System error detected. Comply.",
@@ -444,7 +548,7 @@ class CommandHandler:
                 f"Alert '{name}' has been added to the database. Protocol updated."
             )
         except Exception as e:
-            self.logger.error(f"Error adding alert: {e}")
+            self.logger.error(f"Error adding alert: {e}", exc_info=True)
             await message.channel.send(
                 "Alert creation failed. Database error detected. Comply."
             )
@@ -469,7 +573,7 @@ class CommandHandler:
                     f"Alert '{name}' not found in database. Verify and retry. Comply."
                 )
         except Exception as e:
-            self.logger.error(f"Error triggering alert: {e}")
+            self.logger.error(f"Error triggering alert: {e}", exc_info=True)
             await message.channel.send(
                 "Alert retrieval failed. System malfunction detected. Comply."
             )
@@ -508,6 +612,7 @@ class CommandHandler:
             return
             
         self.custom_commands[command] = response
+        self.save_command_data()
         await message.channel.send(
             f"Command !{command} added to database. New protocol established."
         )
@@ -525,6 +630,7 @@ class CommandHandler:
         command = args[0].lower()
         if command in self.custom_commands:
             del self.custom_commands[command]
+            self.save_command_data()
             await message.channel.send(
                 f"Command !{command} purged from database. Protocol terminated."
             )
@@ -548,6 +654,7 @@ class CommandHandler:
 
         if command in self.custom_commands:
             self.custom_commands[command] = new_response
+            self.save_command_data()
             await message.channel.send(
                 f"Command !{command} updated. Protocol modification complete."
             )
@@ -567,7 +674,7 @@ class CommandHandler:
             )
             await message.channel.send(formatted_response)
         except Exception as e:
-            self.logger.error(f"Error handling custom command: {e}")
+            self.logger.error(f"Error handling custom command: {e}", exc_info=True)
             await message.channel.send(
                 "Custom command execution failed. System malfunction detected. Comply."
             )
@@ -587,7 +694,7 @@ class CommandHandler:
                 text = text.replace(key, str(value))
             return text
         except Exception as e:
-            self.logger.error(f"Error processing command variables: {e}")
+            self.logger.error(f"Error processing command variables: {e}", exc_info=True)
             return text
 
     @command_cooldown(30)
@@ -605,6 +712,7 @@ class CommandHandler:
 
         if existing_command in self.commands or existing_command in self.custom_commands:
             self.command_aliases[new_command] = existing_command
+            self.save_command_data()
             await message.channel.send(
                 f"Alias !{new_command} -> !{existing_command} established. Protocol updated."
             )
@@ -639,11 +747,11 @@ class CommandHandler:
                     "Use !help <command> for details. Use them wisely, minions. Comply."
                 )
         except Exception as e:
-            self.logger.error(f"Error in help command: {e}")
+            self.logger.error(f"Error in help command: {e}", exc_info=True)
             await message.channel.send(
                 "Help system malfunction. Maintenance required. Comply."
             )
-
+            
     def get_command_stats(self) -> Dict[str, Any]:
         """Get command usage statistics."""
         try:
@@ -675,4 +783,160 @@ class CommandHandler:
     def get_title(self) -> str:
         """Get the current stream title."""
         # Implement title retrieval logic here
-        return "Unknown"            
+        return "Unknown"
+
+    def load_command_data(self):
+        """Load custom commands and aliases from file."""
+        try:
+            if Path('command_data.json').exists():
+                with open('command_data.json', 'r') as f:
+                    data = json.load(f)
+                    self.custom_commands = data.get('custom_commands', {})
+                    self.command_aliases = data.get('command_aliases', {})
+        except FileNotFoundError:
+            self.logger.warning("command_data.json not found, using default commands")
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Error decoding command data: {e}")
+        except Exception as e:
+            self.logger.error(f"Error loading command data: {e}")
+
+    def save_command_data(self):
+        """Save custom commands and aliases to file."""
+        try:
+            data = {
+                'custom_commands': self.custom_commands,
+                'command_aliases': self.command_aliases
+            }
+            with open('command_data.json', 'w') as f:
+                json.dump(data, f)
+        except Exception as e:
+            self.logger.error(f"Error saving command data: {e}")
+
+    def format_airport_data(self, data: Dict[str, Any]) -> str:
+          """Formats the airport data into a readable string"""
+          if not data:
+               return "No airport data found."
+          try:
+                name = data.get('name', 'Unknown')
+                ident = data.get('ident', 'Unknown')
+                elevation = data.get('elevation', 'Unknown')
+                
+                runways = data.get('runways', [])
+                runway_info = ""
+                if runways:
+                    runway_details = [f"{r.get('designator', 'Unknown')}: {r.get('surface', 'Unknown')}, {r.get('length', 'Unknown')}ft, HDG {r.get('longestRunwayHeading', 'Unknown')}" for r in runways]
+                    runway_info = f" : Runways: {', '.join(runway_details)}."
+
+                atis = ""
+                if data.get('com'):
+                   if data['com'].get('ATIS:'):
+                       atis = f" : ATIS {data['com'].get('ATIS:')}"
+                tower = ""
+                if data.get('com'):
+                  if data['com'].get('Tower:'):
+                     tower = f" : Tower {data['com'].get('Tower:')}"
+                
+                
+                return (
+                    f"Airport {ident}: {name}. "
+                    f"Elevation: {elevation} feet."
+                    f"{runway_info}"
+                     f"{atis}"
+                     f"{tower}"
+                )
+          except Exception as e:
+               self.logger.error(f"Error formatting airport data: {e}")
+               return "Error formatting airport data."
+
+    @command_cooldown(5)
+    async def metar_command(self, message: Message, *args):
+        """Retrieve and display METAR information for a given ICAO code."""
+
+        if not args:
+            await message.channel.send("Usage: !metar <ICAO_CODE>")
+            return
+
+        icao_code = args[0].upper()
+        try:
+            metar_data = await self.aviation_weather.get_metar(icao_code)
+            if metar_data:
+                formatted_metar = self.format_metar_data(metar_data)
+                await message.channel.send(formatted_metar)
+                await self.bot.tts_manager.speak(formatted_metar)  # Add TTS output
+            else:
+                await message.channel.send(f"Could not retrieve METAR for {icao_code}.")
+
+        except Exception as e:
+            self.logger.error(f"Error in metar command: {e}", exc_info=True)
+            await message.channel.send(f"An error occurred while retrieving the METAR: {e}")
+            
+    def format_metar_data(self, data: Dict[str, Any]) -> str:
+      """Formats the METAR data into a readable string."""
+      if not data:
+          return "No METAR data available."
+      try:
+          icao_code = data.get('icao')
+          if not icao_code:
+            return "No ICAO code found in METAR data."
+          
+          raw_text = data.get('raw_text')
+          if not raw_text:
+            return "No raw METAR text found."
+          
+          # Extract individual components from the raw_text using regex
+          observation_match = re.search(r'(\d{6}Z)', raw_text)
+          wind_match = re.search(r'(\d{3})(\d{2,3})G?(\d{0,2})KT', raw_text)
+          visibility_match = re.search(r'(\d{4})', raw_text)
+          altimeter_match = re.search(r'Q(\d{4})', raw_text)
+          temperature_match = re.search(r'(\d{2})/(\d{2})', raw_text)
+
+          observation_time = observation_match.group(1) if observation_match else "Unknown"
+          wind_direction = wind_match.group(1) if wind_match else "Unknown"
+          wind_speed = wind_match.group(2) if wind_match else "Unknown"
+          wind_gust = wind_match.group(3) if wind_match and wind_match.group(3) else "N/A"
+          visibility = visibility_match.group(1) if visibility_match else "Unknown"
+          altimeter = altimeter_match.group(1) if altimeter_match else "Unknown"
+          temperature = temperature_match.group(1) if temperature_match else "Unknown"
+          dewpoint = temperature_match.group(2) if temperature_match else "Unknown"
+
+          icao_spoken = " ".join(list(icao_code))
+          report = (
+              f"METAR for {icao_spoken} at {observation_time} Zulu. : "
+              f"Wind {wind_direction} degrees at {wind_speed} knots, gusts to {wind_gust} knots. : "  # Include gusts
+              f"Visibility {visibility} meters. : "
+              f"Altimeter {altimeter} hectopascals. : "
+              f"Temperature {temperature} degrees Celsius, dewpoint {dewpoint} degrees Celsius." # Use Celsius
+          )
+          
+          return report
+      except Exception as e:
+          self.logger.error(f"Error formatting METAR data: {e}")
+          return "Error formatting METAR data"
+
+
+    @command_cooldown(5)
+    async def location_command(self, message: Message, *args):
+        """Get location information from Little Navmap."""
+        try:
+            sim_info = await self.bot.littlenavmap.get_sim_info()
+            if sim_info and sim_info.get('active'):
+                lat = sim_info.get('position', {}).get('lat')
+                lon = sim_info.get('position', {}).get('lon')
+
+                if lat and lon:
+                    location_info = (
+                        f"Current Location:\n"
+                        f"Latitude: {lat:.6f}\n"
+                        f"Longitude: {lon:.6f}"
+                    )
+                    await message.channel.send(location_info)
+                else:
+                     await message.channel.send("Location data not available.")
+
+            else:
+                await message.channel.send("Flight simulator is not active.")
+        except Exception as e:
+            self.logger.error(f"Error retrieving or sending location: {e}", exc_info=True)
+            await message.channel.send("Failed to retrieve location.")
+
+    

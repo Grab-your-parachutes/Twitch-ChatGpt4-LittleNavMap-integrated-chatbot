@@ -1,0 +1,106 @@
+Streamer.bot commands:
+  Voice Phrase: Hey Overlord, what's the status?
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !status
+--------------------
+  Voice Phrase: Hey Overlord, give me a brief status.
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !brief
+--------------------
+  Voice Phrase: Hey Overlord, what's the weather?
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !weather
+--------------------
+  Voice Phrase: Hey Overlord, airport info for 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !airport {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, set the title to 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !settitle {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, set the game to 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !setgame {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, timeout 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !timeout {phrase:1} {phrase:2}
+--------------------
+  Voice Phrase: Hey Overlord, clear the chat
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !clearchat
+--------------------
+  Voice Phrase: Hey Overlord, add alert 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !addalert {phrase:1} {phrase:2}
+--------------------
+  Voice Phrase: Hey Overlord, set voice to 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !tts voice {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, set speed to 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !tts speed {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, set volume to 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !tts volume {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, what are the stats?
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !stats
+--------------------
+  Voice Phrase: Hey Overlord, trigger alert 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !alert {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, say 
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !say {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, help
+  Match Type: contains
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !help
+--------------------
+  Voice Phrase: Hey Overlord, help with
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !help {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, add command
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !addcom {phrase:1} {phrase:2}
+--------------------
+  Voice Phrase: Hey Overlord, delete command
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !delcom {phrase:1}
+--------------------
+  Voice Phrase: Hey Overlord, edit command
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !editcom {phrase:1} {phrase:2}
+--------------------
+  Voice Phrase: Hey Overlord, add alias
+  Match Type: startsWith
+  WebSocket URL: ws://localhost:7580
+  Bot Command: !alias {phrase:1} {phrase:2}
+--------------------

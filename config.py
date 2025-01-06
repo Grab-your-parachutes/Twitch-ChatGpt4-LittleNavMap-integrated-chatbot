@@ -7,7 +7,7 @@ import logging
 import json
 import yaml
 from pathlib import Path
-from pydantic import BaseModel, validator
+from pydantic import BaseModel, validator, ValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -29,19 +29,21 @@ class DatabaseConfig(BaseModel):
         return v
 
 class TwitchConfig(BaseModel):
-    OAUTH_TOKEN: str
-    CHANNEL: str
-    BOT_NAME: str
-    BROADCASTER_ID: str
-    PREFIX: str = "!"
-    RATE_LIMIT: int = 20
-    MESSAGE_LIMIT: int = 500
+     OAUTH_TOKEN: str
+     CHANNEL: str
+     BOT_NAME: str
+     BROADCASTER_ID: str
+     PREFIX: str = "!"
+     RATE_LIMIT: int = 20
+     MESSAGE_LIMIT: int = 500
+     IGNORE_LIST: List[str] = field(default_factory=list)  # Add this line
 
-    @validator('OAUTH_TOKEN')
-    def validate_oauth(cls, v):
-        if not v.startswith('oauth:'):
-            raise ValueError("Twitch OAuth token must start with 'oauth:'")
-        return v
+
+     @validator('OAUTH_TOKEN')
+     def validate_oauth(cls, v):
+         if not v.startswith('oauth:'):
+             raise ValueError("Twitch OAuth token must start with 'oauth:'")
+         return v
 
 class OpenAIConfig(BaseModel):
     API_KEY: str
@@ -57,6 +59,18 @@ class VoiceConfig(BaseModel):
     LANGUAGE: str = "en-US"
     CONFIDENCE_THRESHOLD: float = 0.7
 
+    @validator('COMMAND_TIMEOUT')
+    def validate_command_timeout(cls, v):
+        if v <= 0:
+            raise ValueError("Command timeout must be a positive number.")
+        return v
+
+    @validator('PHRASE_LIMIT')
+    def validate_phrase_limit(cls, v):
+        if v <= 0:
+            raise ValueError("Phrase limit must be a positive number.")
+        return v
+
 class StreamerBotConfig(BaseModel):
     WS_URI: str
     RECONNECT_ATTEMPTS: int = 5
@@ -68,10 +82,39 @@ class StreamerBotConfig(BaseModel):
             raise ValueError("WebSocket URI must start with 'ws://'")
         return v
 
+    @validator('RECONNECT_ATTEMPTS')
+    def validate_reconnect_attempts(cls, v):
+        if v <= 0:
+            raise ValueError("Reconnect attempts must be a positive number.")
+        return v
+
+    @validator('HEARTBEAT_INTERVAL')
+    def validate_heartbeat_interval(cls, v):
+        if v <= 0:
+            raise ValueError("Heartbeat interval must be a positive number.")
+        return v
+
 class LittleNavMapConfig(BaseModel):
     BASE_URL: str = "http://localhost:8965"
     UPDATE_INTERVAL: float = 1.0
     CACHE_TTL: int = 30
+
+    @validator('UPDATE_INTERVAL')
+    def validate_update_interval(cls, v):
+        if v <= 0:
+            raise ValueError("Update interval must be a positive number.")
+        return v
+
+    @validator('CACHE_TTL')
+    def validate_cache_ttl(cls, v):
+        if v <= 0:
+            raise ValueError("Cache TTL must be a positive number.")
+        return v
+
+class AviationWeatherConfig(BaseModel):
+    BASE_URL: str = "https://api.open-meteo.com/v1" # Updated base URL
+    TIMEOUT_MS: int = 5000
+
 
 @dataclass
 class Config:
@@ -81,6 +124,7 @@ class Config:
     voice: VoiceConfig
     streamerbot: StreamerBotConfig
     littlenavmap: LittleNavMapConfig
+    aviationweather: AviationWeatherConfig
     bot_trigger_words: List[str] = field(default_factory=lambda: ["bot", "assistant"])
     bot_personality: str = "You are an AI Overlord managing a flight simulation Twitch channel."
     verbose: bool = False
@@ -89,6 +133,9 @@ class Config:
     custom_commands_enabled: bool = True
     log_level: str = "INFO"
     sentry_dsn: Optional[str] = None
+    metar_taf_api_key: Optional[str] = None # Removed METAR_TAF_API_KEY
+    openweathermap_api_key: Optional[str] = None  # Added OpenWeatherMap API Key
+    checkwx_api_key: Optional[str] = None # Added CHECKWX_API_KEY
 
     def __post_init__(self):
         self.validate()
@@ -144,7 +191,14 @@ class Config:
             littlenavmap_config = LittleNavMapConfig(
                 BASE_URL=os.getenv('LITTLENAVMAP_URL', 'http://localhost:8965')
             )
+            aviationweather_config = AviationWeatherConfig(
+                #API_KEY=os.getenv('AVIATIONWEATHER_API_KEY', "e0b65803-b5d4-4e17-a370-a5c0a6607491"), #Removed API Key
+            )
 
+            # Ensure API keys are loaded, and default to None if not available
+            openweathermap_api_key = os.getenv('OPENWEATHERMAP_API_KEY')
+            checkwx_api_key = os.getenv('CHECKWX_API_KEY')
+            
             return cls(
                 twitch=twitch_config,
                 database=database_config,
@@ -152,12 +206,25 @@ class Config:
                 voice=voice_config,
                 streamerbot=streamerbot_config,
                 littlenavmap=littlenavmap_config,
+                aviationweather = aviationweather_config,
                 bot_trigger_words=os.getenv('BOT_TRIGGER_WORDS', 'bot,assistant').split(','),
                 bot_personality=os.getenv('BOT_PERSONALITY', 'You are an AI Overlord managing a flight simulation Twitch channel.'),
                 verbose=os.getenv('VERBOSE', 'False').lower() == 'true',
-                sentry_dsn=os.getenv('SENTRY_DSN')
+                sentry_dsn=os.getenv('SENTRY_DSN'),
+                metar_taf_api_key=os.getenv('METAR_TAF_API_KEY'), # Removed METAR_TAF_API_KEY
+                openweathermap_api_key=openweathermap_api_key,
+                checkwx_api_key=checkwx_api_key # Added CHECKWX_API_KEY
             )
 
+        except ValidationError as e:
+             logger.error(f"Pydantic validation error: {e}")
+             raise ConfigError(f"Configuration validation failed: {e}")
+        except ValueError as e:
+            logger.error(f"Value error during config loading: {e}")
+            raise ConfigError(f"Configuration loading failed: {e}")
+        except TypeError as e:
+            logger.error(f"Type error during config loading: {e}")
+            raise ConfigError(f"Configuration loading failed: {e}")
         except Exception as e:
             logger.error(f"Failed to load configuration: {e}")
             raise ConfigError(f"Configuration loading failed: {e}")
@@ -175,6 +242,11 @@ class Config:
             voice_config = VoiceConfig(**config_data.get('voice', {}))
             streamerbot_config = StreamerBotConfig(**config_data.get('streamerbot', {}))
             littlenavmap_config = LittleNavMapConfig(**config_data.get('littlenavmap', {}))
+            aviationweather_config = AviationWeatherConfig(**config_data.get('aviationweather', {}))
+            
+            # Ensure API keys are loaded, and default to None if not available
+            openweathermap_api_key = config_data.get('openweathermap_api_key')
+            checkwx_api_key = config_data.get('checkwx_api_key')
             
             return cls(
                 twitch=twitch_config,
@@ -183,14 +255,33 @@ class Config:
                 voice=voice_config,
                 streamerbot=streamerbot_config,
                 littlenavmap=littlenavmap_config,
+                aviationweather = aviationweather_config,
                 bot_trigger_words=config_data.get('bot_trigger_words', ["bot", "assistant"]),
                 bot_personality=config_data.get('bot_personality', 'You are an AI Overlord managing a flight simulation Twitch channel.'),
                 verbose=config_data.get('verbose', False),
-                sentry_dsn=config_data.get('sentry_dsn')
+                sentry_dsn=config_data.get('sentry_dsn'),
+                metar_taf_api_key=config_data.get('metar_taf_api_key'), # Removed METAR_TAF_API_KEY
+                openweathermap_api_key=openweathermap_api_key,
+                checkwx_api_key=checkwx_api_key # Added CHECKWX_API_KEY
             )
+        except FileNotFoundError as e:
+            logger.error(f"Config file not found at {file_path}: {e}")
+            raise ConfigError(f"Config file not found: {file_path}") from e
+        except yaml.YAMLError as e:
+            logger.error(f"YAML parsing error: {e}")
+            raise ConfigError(f"YAML parsing failed: {e}") from e
+        except ValidationError as e:
+            logger.error(f"Pydantic validation error: {e}")
+            raise ConfigError(f"Configuration validation failed: {e}") from e
+        except ValueError as e:
+            logger.error(f"Value error during config loading: {e}")
+            raise ConfigError(f"Configuration loading failed: {e}") from e
+        except TypeError as e:
+            logger.error(f"Type error during config loading: {e}")
+            raise ConfigError(f"Configuration loading failed: {e}") from e
         except Exception as e:
             logger.error(f"Failed to load configuration from file: {e}")
-            raise ConfigError(f"Configuration file loading failed: {e}")
+            raise ConfigError(f"Configuration file loading failed: {e}") from e
 
 def load_config() -> Config:
     """Load configuration from environment or file."""
@@ -202,6 +293,6 @@ def load_config() -> Config:
                 logger.warning(f"Config file not found at {config_file}, falling back to environment variables.")
                 return Config.load_from_env()
         return Config.load_from_env()
-    except Exception as e:
+    except ConfigError as e:
         logger.error(f"Failed to load configuration: {e}")
         raise
