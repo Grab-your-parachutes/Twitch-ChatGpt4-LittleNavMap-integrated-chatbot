@@ -16,7 +16,7 @@ This project provides an AI-powered chatbot for Twitch streamers focused on flig
 
 **Clone the Repository:**
 
-git clone https://github.com/your_username/ai-flight-control.git
+git clone (https://github.com/Grab-your-parachutes/Twitch-ChatGpt4-LittleNavMap-integrated-chatbot).git
 
 
 Set Up a Virtual Environment:
