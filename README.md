@@ -110,7 +110,7 @@ Commands
 
 !setgame (mod only): Sets the stream game/category (not yet implemented).
 
-
+This project will be in active development, there are files and functions present that are not yet fully integrated.
 
 Contributing
 
