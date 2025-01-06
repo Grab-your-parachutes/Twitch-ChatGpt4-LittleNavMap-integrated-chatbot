@@ -4,7 +4,7 @@ This project provides an AI-powered chatbot for Twitch streamers focused on flig
 
 * **Flight Status Integration:**  Real-time flight data displayed in chat, including altitude, speed, heading, and flight phase (using Little Navmap).
 * **AI Chat:**  Engages with viewers using OpenAI's ChatGPT, providing dynamic and contextual conversation.
-* **Text-to-Speech (TTS):**  Uses Streamer.Bot for voice alerts and responses, enhancing the interactive experience.
+* **Text-to-Speech (TTS):**  Uses Streamer.Bot for voice alerts and responses, enhancing the interactive experience. Gives random aviation facts and tells you about stuff close by, cities, castles, whatever.
 * **Customizable Personality:**  The bot adopts an "AI Overlord" persona, issuing decrees, making sarcastic remarks, and engaging in playful banter.  This can be adjusted.
 * **Custom Commands:**  Moderators can add, delete, and edit custom commands for unique interactions.
 * **Alerts:**  Set up and trigger custom alerts for specific events or milestones.
