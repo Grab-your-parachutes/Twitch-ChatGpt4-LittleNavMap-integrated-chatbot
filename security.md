@@ -17,7 +17,7 @@ Currently, only the latest version of the project receives active security updat
 To report a security vulnerability, please follow these steps:
 
 1. **Do Not Publicly Disclose:**  Avoid disclosing the vulnerability publicly until it has been addressed.
-2. **Contact Us:** Please report the vulnerability by creating a new [GitHub issue ([https://github.com/your_username/your-repo-name/issues/new](https://github.com/Grab-your-parachutes/Twitch-ChatGpt4-LittleNavMap-integrated-chatbot.git))]   and selecting the "Security vulnerability" option.  Make sure to provide a detailed description of the vulnerability, including:
+2. **Contact Us:** Please report the vulnerability by creating a new [GitHub issue](https://github.com/Grab-your-parachutes/Twitch-ChatGpt4-LittleNavMap-integrated-chatbot.git))]   and selecting the "Security vulnerability" option.  Make sure to provide a detailed description of the vulnerability, including:
     * Steps to reproduce the issue.
     * The potential impact of the vulnerability.
     * Any relevant code snippets or proof-of-concept demonstrations (if possible, share these privately).
